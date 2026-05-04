@@ -11,3 +11,12 @@ pom.xml.asc
 /.prepl-port
 .hgignore
 .hg/
+
+# Editor/IDE
+.idea/
+*.iml
+.vscode/
+
+# Tools
+.clj-kondo/.cache/
+.lsp/.cache/
