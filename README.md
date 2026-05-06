@@ -1,36 +1,57 @@
-# test
+# clj-telebot
 
-FIXME: description
+Small Clojure Telegram bot client using the Telegram HTTP API.
 
-## Installation
+## Requirements
 
-Download from http://example.com/FIXME.
+- Java 8+
+- Leiningen
+- A Telegram bot token from BotFather
 
-## Usage
+## Configuration
 
-FIXME: explanation
+Set the required environment variable before running:
 
-    $ java -jar test-0.1.0-standalone.jar [args]
+```bash
+export TELEGRAM_BOT_TOKEN="your_bot_token"
+```
 
-## Options
+If `TELEGRAM_BOT_TOKEN` is missing or blank, the app throws:
 
-FIXME: listing of options this app accepts.
+```text
+Missing required env var: TELEGRAM_BOT_TOKEN
+```
 
-## Examples
+## Run
 
-...
+Start the app:
 
-### Bugs
+```bash
+lein run
+```
 
-...
+The current `-main` prints the result of Telegram `getMe`.
 
-### Any Other Sections
-### That You Think
-### Might be Useful
+## REPL Usage
+
+```clojure
+(require '[clj-telebot.telegram.api :as api])
+
+(api/getMe)
+(api/getUpdates)
+```
+
+HTTP responses are requested with Hato using `{:as :json}`, so `:body` is already a Clojure map.
+
+## Project Structure
+
+- `src/clj_telebot/core.clj` entrypoint
+- `src/clj_telebot/telegram/api.clj` Telegram API helpers
+- `src/clj_telebot/misc/helpers.clj` environment variable utilities
 
 ## License
 
-Copyright © 2026 FIXME
+Copyright © 2026
 
 This program and the accompanying materials are made available under the
 terms of the Eclipse Public License 2.0 which is available at

@@ -1,20 +1,15 @@
-(ns test.core
-  (:gen-class)
+(ns clj-telebot.telegram.api
   (:require
    [hato.client :as http]
-   [clojure.pprint :as pp]))
+   [clojure.pprint :as pp]
+   [clj-telebot.misc.helpers :as helpers]))
 
-(defn -main
-  "I don't do a whole lot ... yet."
-  [& args]
-  (println "Hello, World!"))
-
-(def BOTTOKEN "8218400675:AAHputMhHOayrWtFxzt0XfEPA6gqMBXA1S0")
+(def BOT-TOKEN (helpers/required-env "TELEGRAM_BOT_TOKEN"))
 (def TELEGRAM-API "https://api.telegram.org/bot")
 
 (defn getAPIURL
   [method]
-  (str TELEGRAM-API BOTTOKEN method))
+  (str TELEGRAM-API BOT-TOKEN method))
 
 (defn doGet
   [httpGet]
