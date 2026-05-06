@@ -20,3 +20,4 @@ pom.xml.asc
 # Tools
 .clj-kondo/.cache/
 .lsp/.cache/
+.calva/
