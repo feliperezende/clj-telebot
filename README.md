@@ -30,15 +30,22 @@ Start the app:
 lein run
 ```
 
-The current `-main` prints the result of Telegram `getMe`.
+The current `-main` starts a long-polling loop and echoes text messages back to each chat.
 
 ## REPL Usage
 
 ```clojure
 (require '[clj-telebot.telegram.api :as api])
 
-(api/getMe)
-(api/getUpdates)
+(api/get-me)
+(api/get-updates)
+(api/send-message 123456789 "hello")
+
+;; long polling with default timeout (30s)
+(api/long-poll-updates prn)
+
+;; long polling with custom options
+(api/long-poll-updates prn {:offset 0 :timeout 30 :error-sleep-ms 1000})
 ```
 
 HTTP responses are requested with Hato using `{:as :json}`, so `:body` is already a Clojure map.
