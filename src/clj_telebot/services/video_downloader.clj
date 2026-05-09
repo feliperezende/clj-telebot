@@ -44,8 +44,38 @@
     (let [url-pattern #"(?:https?://)?(?:www\.)?(?:twitter\.com|x\.com)/[^\s]+"]
       (re-find url-pattern text))))
 
+(defn- find-downloaded-file
+  "Finds the downloaded file in temp directory.
+   yt-dlp creates intermediate files with format IDs, then merges to final file."
+  [^File expected-file]
+  (let [parent (.getParentFile expected-file)
+        uuid-name (.getName expected-file)  ; e.g., "uuid.mp4"
+        uuid-without-ext (subs uuid-name 0 (- (.length uuid-name) 4)) ; "uuid"
+        ;; List all files in temp directory
+        all-files (when (.exists parent) (.listFiles parent))]
+    ;; Look for final merged file first (uuid.mp4)
+    ;; yt-dlp may also create uuid.fhls-XXXX.mp4 and uuid.fhls-audio-XXXX.mp4
+    ;; Then merges them into uuid.mp4
+    (or
+     ;; First try the expected final file
+     (when (.exists expected-file) expected-file)
+     ;; Try without extension prefix (for template output)
+     (let [candidates (filter #(and (.isFile ^File %)
+                                    (.startsWith (.getName ^File %) uuid-without-ext))
+                              all-files)]
+       ;; Prefer .mp4 files, especially those without format IDs (merged file)
+       (or (first (filter #(and (.endsWith (.getName ^File %) ".mp4")
+                                (not (.contains (.getName ^File %) ".fhls-")))
+                          candidates))
+           ;; Any .mp4 file
+           (first (filter #(.endsWith (.getName ^File %) ".mp4") candidates))
+           ;; Any video file
+           (first candidates))))))
+
 (defn download-twitter-video
   "Downloads video from Twitter/X URL using yt-dlp.
+
+   NOTE: Requires ffmpeg to be installed on the system for merging video+audio streams.
 
    Args:
      url - Twitter/X video URL
@@ -59,11 +89,17 @@
     (ensure-temp-dir)
     (let [temp-file (generate-temp-file)
           output-path (.getAbsolutePath ^File temp-file)
-          ;; yt-dlp command: download best video+audio merged as mp4
+          ;; Remove .mp4 from path since %(ext)s will add the extension
+          base-path (subs output-path 0 (- (.length output-path) 4))
+          ;; Use output template: uuid.%(ext)s -> uuid.mp4
+          output-template (str base-path ".%(ext)s")
+          ;; Try to download pre-merged format first (avoids ffmpeg requirement)
+          ;; If not available, yt-dlp will download separate streams and merge with ffmpeg
           cmd ["yt-dlp"
-               "-f" "best[ext=mp4]/best"  ; Best quality mp4, fallback to best
+               "-f" "best[protocol*=m3u8]/best"  ; Try HLS streams first (pre-merged)
                "--merge-output-format" "mp4"
-               "--output" output-path
+               "--remux-video" "mp4"      ; Force mp4 container
+               "--output" output-template
                "--no-playlist"              ; Don't download playlists
                "--max-filesize" "100M"      ; Limit to 100MB for Telegram
                "--no-warnings"
@@ -71,18 +107,43 @@
           ^ProcessBuilder process (ProcessBuilder. ^java.util.List cmd)
           _ (.redirectErrorStream process true)
           _ (.directory process temp-download-dir)
+          _ (println "[DEBUG] Starting yt-dlp for URL:" url)
+          _ (println "[DEBUG] Output template:" output-template)
           started (.start process)
           finished? (.waitFor started 120 TimeUnit/SECONDS)
-          exit-code (when finished? (.exitValue started))]
+          exit-code (when finished? (.exitValue started))
+          output (when finished? (slurp (.getInputStream started)))]
 
-      (if (and finished? (= 0 exit-code))
-        (if (.exists ^File temp-file)
-          {:success true :file temp-file}
-          {:success false :error "Download completed but file not found"})
-        (let [error-output (if finished?
-                             (slurp (.getInputStream started))
-                             "Download timed out after 120 seconds")]
-          {:success false :error (str "yt-dlp failed" (when exit-code (str " with code " exit-code)) ": " error-output)})))
+      (cond
+        ;; Success case
+        (and finished? (= 0 exit-code))
+        (let [actual-file (find-downloaded-file temp-file)]
+          (println "[DEBUG] Looking for downloaded file with UUID prefix:" base-path)
+          (println "[DEBUG] Found file:" (when actual-file (.getAbsolutePath ^File actual-file)))
+          (if actual-file
+            {:success true :file actual-file}
+            {:success false
+             :error (str "Download completed but file not found. This usually means ffmpeg is not installed. "
+                        "Please install ffmpeg. Files in temp dir: "
+                        (str/join ", " (map #(.getName ^File %)
+                                            (.listFiles temp-download-dir))))}))
+
+        ;; ffmpeg not found error
+        (and finished? output (.contains output "ffmpeg"))
+        {:success false
+         :error (str "ffmpeg is required but not installed. "
+                    "Please install ffmpeg to merge video and audio streams. "
+                    "Error: " (subs output 0 (min 200 (.length output))))}
+
+        ;; Other errors
+        finished?
+        {:success false
+         :error (str "yt-dlp failed with code " exit-code ": "
+                    (subs output 0 (min 500 (.length output))))}
+
+        ;; Timeout
+        :else
+        {:success false :error "Download timed out after 120 seconds"}))
 
     (catch Exception e
       {:success false :error (str "Download error: " (.getMessage e))})))
