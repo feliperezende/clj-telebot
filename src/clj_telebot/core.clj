@@ -1,9 +1,11 @@
 (ns clj-telebot.core
   (:gen-class)
   (:require
-   [clj-telebot.telegram.api :as api]))
+   [clj-telebot.telegram.api :as api]
+   [clj-telebot.services.video-downloader :as video]))
 
 (defn- extract-text-message
+  "Extracts chat-id and text from Telegram update."
   [update]
   (let [message (:message update)
         chat-id (get-in message [:chat :id])
@@ -12,13 +14,71 @@
       {:chat-id chat-id
        :text text})))
 
+(defn- handle-download-command
+  "Handles /download command by downloading Twitter/X video and sending it.
+
+   Usage: /download https://x.com/user/status/123...
+   Or just send the URL directly."
+  [chat-id ^String text]
+  (println "Processing download request from chat" chat-id)
+  (let [; Send "downloading" status to user
+        _ (api/send-message chat-id "⏳ Downloading video, please wait...")
+        ; Extract URL and download
+        result (video/extract-url-and-download text)
+        ^java.io.File video-file (:file result)]
+
+    (if (:success result)
+      (try
+        (println "Sending video to chat" chat-id "- file:" (.getName video-file))
+        (api/send-video chat-id video-file :caption "📹 Here's your video!")
+        (api/send-message chat-id "✅ Download complete!")
+        (catch Exception e
+          (println "Error sending video:" (.getMessage e))
+          (api/send-message chat-id (str "❌ Error sending video: " (.getMessage e))))
+        (finally
+          ; Always clean up the temp file
+          (video/cleanup-temp-file video-file)))
+
+      ; Download failed
+      (do
+        (println "Download failed:" (:error result))
+        (api/send-message chat-id (str "❌ " (:error result)))))))
+
 (defn- echo-update
+  "Basic echo handler - repeats what user said."
+  [chat-id text]
+  (api/send-message chat-id text))
+
+(defn- process-update
+  "Routes incoming updates to appropriate handlers based on command/text content."
   [update]
   (when-let [{:keys [chat-id text]} (extract-text-message update)]
-    (api/send-message chat-id text)))
+    (let [^String txt text]
+      (cond
+        ; Check for /download command
+        (or (.startsWith txt "/download")
+            (.startsWith txt "/dl"))
+        (handle-download-command chat-id txt)
+
+        ; Check if message contains Twitter/X URL directly
+        (re-find #"(?:twitter\.com|x\.com)/" txt)
+        (handle-download-command chat-id txt)
+
+        ; Otherwise echo the message
+        :else
+        (echo-update chat-id txt)))))
 
 (defn -main
-  "Starts Telegram long polling and echoes text messages."
+  "Starts Telegram bot with video download support.
+
+   Commands:
+   - /download [URL] - Download Twitter/X video
+   - Send Twitter/X URL directly - Also downloads video
+   - Any other text - Echoed back"
   [& args]
-  (println "Starting Telegram echo bot...")
-  (api/long-poll-updates echo-update))
+  (println "Starting Telegram bot with video download support...")
+  (println "Commands:")
+  (println "  /download [URL] - Download Twitter/X video")
+  (println "  /dl [URL]       - Short alias for download")
+  (println "  Just send a Twitter/X URL directly")
+  (api/long-poll-updates process-update))

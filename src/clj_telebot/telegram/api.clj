@@ -91,6 +91,25 @@
            {:form-params {"chat_id" chat-id
                           "text" text}}))
 
+(defn send-video
+  "Sends video file to a specific chat.
+
+   Args:
+     chat-id  - Target chat ID (number or string for channels)
+     video    - File object (java.io.File) to send
+     options  - Optional map with additional parameters:
+                :caption - Video caption (optional)
+                :supports_streaming - Boolean, whether video is suitable for streaming
+
+   Returns API response with sent message details."
+  [chat-id ^java.io.File video & {:keys [caption supports-streaming]}]
+  (do-post "/sendVideo"
+           {:multipart [{:name "chat_id" :content (str chat-id)}
+                         {:name "video" :content video :filename (.getName video)}]
+            :form-params (cond-> {}
+                         caption (assoc "caption" caption)
+                         supports-streaming (assoc "supports_streaming" supports-streaming))}))
+
 (defn get-updates
   "Receives incoming updates from Telegram using long polling.
 
@@ -212,3 +231,20 @@
    (println "Long polling with offset" offset "and timeout" timeout "seconds...")
    (loop [offset offset]
      (recur (safe-poll handler offset timeout error-sleep-ms)))))
+
+(defn test1
+  [vec]
+  (loop [v vec]
+    (when (seq v)
+      (println "Processing:" (first v))
+      (Thread/sleep 1000) ;; Simulate work
+      (recur (rest v)))))
+
+(defn test2
+  [vec]
+  (loop [v vec]
+    (when (seq v)
+      (let [[head & tail] v]
+        (println "Processing:" head)
+        (Thread/sleep 1000) ;; Simulate work
+        (recur tail)))))
