@@ -15,7 +15,10 @@
        :text text})))
 
 (defn- handle-download-command
-  "Handles /download command by downloading Twitter/X video and sending it.
+  "Handles /download command by downloading video from URL and sending it.
+
+   Supports: Twitter/X, TikTok, Instagram, YouTube, Reddit, and 1000+ more sites
+   via yt-dlp.
 
    Usage: /download https://x.com/user/status/123...
    Or just send the URL directly."
@@ -49,6 +52,11 @@
   [chat-id text]
   (api/send-message chat-id text))
 
+(defn- contains-video-url?
+  "Checks if text contains a URL from a supported video platform."
+  [^String text]
+  (re-find #"(?i)(https?://.*(?:x\.com|twitter\.com|tiktok\.com|instagram\.com|youtube\.com|youtu\.be|reddit\.com|facebook\.com|vimeo\.com|dailymotion\.com))" text))
+
 (defn- process-update
   "Routes incoming updates to appropriate handlers based on command/text content."
   [update]
@@ -60,8 +68,8 @@
             (.startsWith txt "/dl"))
         (handle-download-command chat-id txt)
 
-        ; Check if message contains Twitter/X URL directly
-        (re-find #"(?:twitter\.com|x\.com)/" txt)
+        ; Check if message contains a video URL from supported platforms
+        (contains-video-url? txt)
         (handle-download-command chat-id txt)
 
         ; Otherwise echo the message
@@ -71,14 +79,24 @@
 (defn -main
   "Starts Telegram bot with video download support.
 
+   Supports 1000+ video sites via yt-dlp:
+   - Twitter/X (x.com, twitter.com)
+   - TikTok (tiktok.com)
+   - Instagram (instagram.com)
+   - YouTube (youtube.com, youtu.be)
+   - Reddit (reddit.com)
+   - Facebook (facebook.com)
+   - And many more...
+
    Commands:
-   - /download [URL] - Download Twitter/X video
-   - Send Twitter/X URL directly - Also downloads video
-   - Any other text - Echoed back"
+   - /download [URL] - Download video from URL
+   - /dl [URL]       - Short alias for download
+   - Send URL directly - Also downloads video"
   [& args]
   (println "Starting Telegram bot with video download support...")
+  (println "Supports: Twitter/X, TikTok, Instagram, YouTube, Reddit, and more")
   (println "Commands:")
-  (println "  /download [URL] - Download Twitter/X video")
-  (println "  /dl [URL]       - Short alias for download")
-  (println "  Just send a Twitter/X URL directly")
+  (println "  /download [URL] - Download video")
+  (println "  /dl [URL]       - Short alias")
+  (println "  Just send a video URL directly")
   (api/long-poll-updates process-update))

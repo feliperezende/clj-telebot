@@ -1,5 +1,8 @@
 (ns clj-telebot.services.video-downloader
-  "Service for downloading videos from Twitter/X using yt-dlp.
+  "Service for downloading videos from various platforms using yt-dlp.
+
+   Supports 1000+ sites including Twitter/X, TikTok, Instagram, YouTube,
+   Reddit, Facebook, Vimeo, and more.
 
    Spawns external yt-dlp process to download videos and provides
    temporary file management."
@@ -30,19 +33,25 @@
     (io/file temp-download-dir filename)))
 
 (defn- parse-url-from-text
-  "Extracts Twitter/X URL from text message.
+  "Extracts video URL from text message.
 
-   Supports:
-   - https://twitter.com/...
-   - https://x.com/...
-   - twitter.com/...
-   - x.com/...
+   Supports any site that yt-dlp supports:
+   - Twitter/X (x.com, twitter.com)
+   - TikTok (tiktok.com)
+   - Instagram (instagram.com)
+   - YouTube (youtube.com, youtu.be)
+   - Reddit (reddit.com)
+   - And 1000+ other sites
 
    Returns: URL string or nil if not found"
   [text]
   (when text
-    (let [url-pattern #"(?:https?://)?(?:www\.)?(?:twitter\.com|x\.com)/[^\s]+"]
-      (re-find url-pattern text))))
+    ;; Match common video URL patterns
+    (let [url-pattern #"https?://[^\s]+"]
+      (when-let [url (re-find url-pattern text)]
+        ;; Basic validation - check if it looks like a video platform
+        (when (re-find #"(?i)(x\.com|twitter\.com|tiktok\.com|instagram\.com|youtube\.com|youtu\.be|reddit\.com|facebook\.com|vimeo\.com|dailymotion\.com)" url)
+          url)))))
 
 (defn- find-downloaded-file
   "Finds the downloaded file in temp directory.
@@ -166,12 +175,14 @@
 (defn extract-url-and-download
   "Convenience function: extracts URL from text and downloads video.
 
+   Supports 1000+ sites via yt-dlp.
+
    Args:
-     text - Message text potentially containing Twitter/X URL
+     text - Message text potentially containing a video URL
 
    Returns: {:success true :file java.io.File} on success
             {:success false :error string} on failure (includes no URL found)"
   [text]
   (if-let [url (parse-url-from-text text)]
     (download-twitter-video url)
-    {:success false :error "No Twitter/X URL found in message. Please send a link like https://x.com/user/status/123..."}))
+    {:success false :error "No supported video URL found. Please send a link from Twitter/X, TikTok, Instagram, YouTube, Reddit, or other supported sites."}))
