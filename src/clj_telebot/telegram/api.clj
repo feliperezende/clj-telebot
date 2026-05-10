@@ -5,7 +5,8 @@
    receiving updates via long polling and sending messages back to chats."
   (:require
    [hato.client :as http]
-   [clj-telebot.misc.helpers :as helpers]))
+   [clj-telebot.misc.helpers :as helpers]
+   [cheshire.core :as json]))
 
 ;; Configuration constants loaded from environment
 
@@ -110,6 +111,59 @@
                          caption (assoc "caption" caption)
                          supports-streaming (assoc "supports_streaming" supports-streaming))}))
 
+(defn set-my-commands
+  "Sets the bot's command list shown in the menu.
+
+   Args:
+     commands - Vector of command maps with keys:
+                :command - Command name (without /)
+                :description - Short description (1-256 chars)
+
+   Example: (set-my-commands [{:command \"download\"
+                               :description \"Download video from URL\"}])
+
+   Returns API response with :ok boolean."
+  [commands]
+  (do-post "/setMyCommands"
+           {:content-type :json
+            :body (json/generate-string
+                   {:commands (mapv #(select-keys % [:command :description]) commands)})}))
+
+(defn get-my-commands
+  "Gets the bot's current command list.
+
+   Returns map with :ok boolean and :result containing
+   vector of command objects."
+  []
+  (do-get "/getMyCommands"))
+
+(defn delete-my-commands
+  "Deletes the bot's command list.
+
+   Returns API response with :ok boolean."
+  []
+  (do-post "/deleteMyCommands"))
+
+;; Update processing utilities
+
+(defn get-next-offset
+  "Calculates next offset value after processing a batch of updates.
+
+   Args:
+     updates       - Vector of update objects from Telegram
+     current-offset - The offset that was used to fetch this batch
+
+   Returns:
+     If updates exist: (max update_id) + 1 to skip processed updates
+     If no updates: current-offset to retry from same position"
+  [updates current-offset]
+  (if (seq updates)
+    (->> updates
+         (map :update_id)
+         (apply max)
+         inc)
+    current-offset))
+
 (defn get-updates
   "Receives incoming updates from Telegram using long polling.
 
@@ -134,27 +188,7 @@
      (do-get "/getUpdates"
              {:query-params query-params
               ;; Add 5s buffer to socket timeout so Telegram has time to respond
-              :socket-timeout (+ 5000 (* 1000 effective-timeout))}))))
-
-;; Update processing utilities
-
-(defn get-next-offset
-  "Calculates next offset value after processing a batch of updates.
-
-   Args:
-     updates       - Vector of update objects from Telegram
-     current-offset - The offset that was used to fetch this batch
-
-   Returns:
-     If updates exist: (max update_id) + 1 to skip processed updates
-     If no updates: current-offset to retry from same position"
-  [updates current-offset]
-  (if (seq updates)
-    (->> updates
-         (map :update_id)
-         (apply max)
-         inc)
-    current-offset))
+               :socket-timeout (+ 5000 (* 1000 effective-timeout))}))))
 
 ;; Long polling implementation
 
