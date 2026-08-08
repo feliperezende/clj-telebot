@@ -2,7 +2,9 @@
   (:gen-class)
   (:require
    [clj-telebot.telegram.api :as api]
-   [clj-telebot.services.video-downloader :as video]))
+   [clj-telebot.services.video-downloader :as video])
+  (:import
+   [java.lang.management ManagementFactory]))
 
 (defn- extract-text-message
   "Extracts chat-id and text from Telegram update."
@@ -66,6 +68,24 @@
   [chat-id text]
   (api/send-message chat-id text))
 
+(defn- format-uptime
+  "Formats milliseconds as human-readable uptime string."
+  [millis]
+  (let [total-seconds (long (/ millis 1000))
+        days (quot total-seconds 86400)
+        hours (quot (mod total-seconds 86400) 3600)
+        minutes (quot (mod total-seconds 3600) 60)
+        seconds (mod total-seconds 60)]
+    (str "🤖 Bot uptime: "
+         (when (pos? days) (str days "d "))
+         (format "%02dh %02dm %02ds" hours minutes seconds))))
+
+(defn- handle-uptime-command
+  "Handles /uptime command by sending bot process uptime."
+  [chat-id]
+  (let [uptime-ms (.getUptime (ManagementFactory/getRuntimeMXBean))]
+    (api/send-message chat-id (format-uptime uptime-ms))))
+
 (defn- contains-video-url?
   "Checks if text contains a URL from a supported video platform."
   [^String text]
@@ -89,6 +109,10 @@
         (contains-video-url? txt)
         (handle-download-command chat-id txt)
 
+        ;; Check for /uptime command
+        (.startsWith txt "/uptime")
+        (handle-uptime-command chat-id)
+
         ;; Otherwise echo the message
         :else
         (echo-update chat-id txt)))))
@@ -110,6 +134,7 @@
    Commands:
    - /download [URL] - Download video from URL
    - /dl [URL]       - Short alias for download
+   - /uptime         - Show bot uptime
    - Send URL directly - Also downloads video"
   [& args]
   (println "Starting Telegram bot with async video download support...")
@@ -118,5 +143,6 @@
   (println "Commands:")
   (println "  /download [URL] - Download video")
   (println "  /dl [URL]       - Short alias")
+  (println "  /uptime         - Show bot uptime")
   (println "  Just send a video URL directly")
   (api/long-poll-updates process-update))
