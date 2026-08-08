@@ -3,6 +3,22 @@
    [clojure.test :refer [deftest is testing]]
    [clj-telebot.core :as core]))
 
+(deftest format-uptime-test
+  (testing "Formats zero uptime"
+    (is (= "🤖 Bot uptime: 00h 00m 00s" (#'core/format-uptime 0))))
+
+  (testing "Formats seconds only"
+    (is (= "🤖 Bot uptime: 00h 00m 45s" (#'core/format-uptime 45000))))
+
+  (testing "Formats minutes and seconds"
+    (is (= "🤖 Bot uptime: 00h 05m 30s" (#'core/format-uptime 330000))))
+
+  (testing "Formats hours, minutes, seconds"
+    (is (= "🤖 Bot uptime: 02h 15m 10s" (#'core/format-uptime 8110000))))
+
+  (testing "Formats days"
+    (is (= "🤖 Bot uptime: 3d 10h 30m 00s" (#'core/format-uptime 297000000)))))
+
 (deftest extract-text-message-test
   (testing "Extracts chat-id and text from valid message"
     (let [update {:message {:chat {:id 123456}
