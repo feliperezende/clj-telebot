@@ -10,10 +10,18 @@
 
 ;; Configuration constants loaded from environment
 
-(def bot-token
+;; Delayed lookup of TELEGRAM_BOT_TOKEN so namespace loading
+;; (e.g. `lein check` / `lein test`) does not require the env var.
+;; The error is thrown on first API use instead.
+;; NOTE: defonce takes no docstring arg (unlike def).
+(defonce ^:private token-delay
+  (delay (helpers/required-env "TELEGRAM_BOT_TOKEN")))
+
+(defn bot-token
   "Bot authentication token from BotFather.
-   Loaded from TELEGRAM_BOT_TOKEN environment variable at startup."
-  (helpers/required-env "TELEGRAM_BOT_TOKEN"))
+   Loaded lazily from TELEGRAM_BOT_TOKEN environment variable on first use."
+  []
+  @token-delay)
 
 (def telegram-api
   "Base URL for Telegram Bot API endpoints."
@@ -33,7 +41,7 @@
    Example: (get-api-url \"/getMe\")
    Returns: \"https://api.telegram.org/bot<token>/getMe\""
   [method]
-  (str telegram-api bot-token method))
+  (str telegram-api (bot-token) method))
 
 ;; HTTP request helpers
 

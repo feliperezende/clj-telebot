@@ -118,14 +118,22 @@
           _ (.directory process temp-download-dir)
           _ (println "[DEBUG] Starting yt-dlp for URL:" url)
           _ (println "[DEBUG] Output template:" output-template)
-          started (.start process)
+          ^Process started (.start process)
+          ;; Drain stdout in background so a full OS pipe never blocks yt-dlp.
+          output-future (future (try (slurp (.getInputStream started))
+                                     (catch Exception _ "")))
           finished? (.waitFor started 120 TimeUnit/SECONDS)
+          _ (when-not finished?
+              (.destroyForcibly started)
+              (.waitFor started 5 TimeUnit/SECONDS)
+              (future-cancel output-future))
           exit-code (when finished? (.exitValue started))
-          output (when finished? (slurp (.getInputStream started)))]
+          output (when finished? (or (deref output-future 10000 "") ""))]
 
-      (cond
-        ;; Success case
-        (and finished? (= 0 exit-code))
+      (try
+        (cond
+          ;; Success case
+          (and finished? (= 0 exit-code))
         (let [actual-file (find-downloaded-file temp-file)]
           (println "[DEBUG] Looking for downloaded file with UUID prefix:" base-path)
           (println "[DEBUG] Found file:" (when actual-file (.getAbsolutePath ^File actual-file)))
@@ -152,7 +160,12 @@
 
         ;; Timeout
         :else
-        {:success false :error "Download timed out after 120 seconds"}))
+        {:success false :error "Download timed out after 120 seconds"})
+        (finally
+          (when (.isAlive started)
+            (.destroyForcibly started))
+          (future-cancel output-future))
+        ))
 
     (catch Exception e
       {:success false :error (str "Download error: " (.getMessage e))})))
