@@ -4,7 +4,18 @@
    [clj-telebot.telegram.api :as api]
    [clj-telebot.services.video-downloader :as video])
   (:import
-   [java.lang.management ManagementFactory]))
+   [java.lang.management ManagementFactory]
+   [java.util.concurrent ExecutorService RejectedExecutionException
+    SynchronousQueue ThreadPoolExecutor ThreadPoolExecutor$AbortPolicy TimeUnit]))
+
+(def ^ExecutorService download-pool
+  "Bounded pool for video downloads (max 3 concurrent).
+   Extra submissions are rejected with RejectedExecutionException
+   so a spammer cannot exhaust threads, processes, or disk."
+  (ThreadPoolExecutor. 3 3
+                       (long 0) TimeUnit/SECONDS
+                       (SynchronousQueue.)
+                       (ThreadPoolExecutor$AbortPolicy.)))
 
 (defn- extract-text-message
   "Extracts chat-id and text from Telegram update."
@@ -17,7 +28,7 @@
        :text text})))
 
 (defn- send-download-result
-  "Sends the download result to the user. Called from future."
+  "Sends the download result to the user. Called from pool thread."
   [chat-id result]
   (let [^java.io.File video-file (:file result)]
     (try
@@ -44,7 +55,9 @@
    Supports: Twitter/X, TikTok, Instagram, YouTube, Reddit, and 1000+ more sites
    via yt-dlp.
 
-   Downloads run in background so bot can continue processing other messages.
+   Downloads run on a bounded pool (max 3 concurrent) so the bot stays
+   responsive without letting one chat exhaust threads, processes, or disk.
+   When the pool is saturated the request is rejected with a busy message.
 
    Usage: /download https://x.com/user/status/123...
    Or just send the URL directly."
@@ -52,16 +65,22 @@
   (println "Queuing download request from chat" chat-id)
   ;; Send immediate confirmation
   (api/send-message chat-id "⏳ Downloading video, please wait...")
-  ;; Start download in background thread
-  (future
-    (try
-      (let [result (video/extract-url-and-download text)]
-        (send-download-result chat-id result))
-      (catch Exception e
-        (println "Error in download future for chat" chat-id ":" (.getMessage e))
-        (try
-          (api/send-message chat-id "❌ An unexpected error occurred during download.")
-          (catch Exception _ nil))))))
+  ;; Start download on bounded pool thread
+  (try
+    (.submit download-pool
+             ^Runnable (fn []
+                         (try
+                           (let [result (video/extract-url-and-download text)]
+                             (send-download-result chat-id result))
+                           (catch Exception e
+                             (println "Error in download task for chat" chat-id ":" (.getMessage e))
+                             (try
+                               (api/send-message chat-id "❌ An unexpected error occurred during download.")
+                               (catch Exception _ nil))))))
+    nil
+    (catch RejectedExecutionException _
+      (println "Download pool saturated, rejecting request from chat" chat-id)
+      (api/send-message chat-id "❌ Server busy (max 3 concurrent downloads), please try again shortly."))))
 
 (defn- echo-update
   "Basic echo handler - repeats what user said."
@@ -139,10 +158,12 @@
   [& args]
   (println "Starting Telegram bot with async video download support...")
   (println "Supports: Twitter/X, TikTok, Instagram, YouTube, Reddit, and more")
-  (println "Downloads run asynchronously - multiple users can download at once!")
+  (println "Downloads run asynchronously - up to 3 concurrent, extras get a busy message!")
   (println "Commands:")
   (println "  /download [URL] - Download video")
   (println "  /dl [URL]       - Short alias")
   (println "  /uptime         - Show bot uptime")
   (println "  Just send a video URL directly")
+  (.addShutdownHook (Runtime/getRuntime)
+                    (Thread. ^Runnable (fn [] (.shutdown download-pool))))
   (api/long-poll-updates process-update))

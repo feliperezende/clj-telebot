@@ -1,4 +1,4 @@
-(defproject clj-telebot "0.1.0-SNAPSHOT"
+(defproject clj-telebot "0.2.0-SNAPSHOT"
   :description "Small Clojure Telegram bot client using Hato"
   :url "https://github.com/felipe/clj-telebot"
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
