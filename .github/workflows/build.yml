@@ -1,0 +1,80 @@
+name: Build
+
+# Tests run on every PR; the jar is built, uploaded, and released
+# whenever a PR is merged (i.e. a push to master lands).
+"on":
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+# Needed so the release step can create tags + releases.
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Leiningen
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sS -o "$HOME/bin/lein" https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+          chmod +x "$HOME/bin/lein"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Run tests
+        run: lein test
+        env:
+          # Tests are hermetic since the lazy-token fix, but a dummy
+          # value keeps older code paths safe as well.
+          TELEGRAM_BOT_TOKEN: dummy
+
+  build-jar:
+    # Only on pushes to master (PR merges), not on PR branches.
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Leiningen
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sS -o "$HOME/bin/lein" https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+          chmod +x "$HOME/bin/lein"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Build uberjar
+        run: lein uberjar
+        env:
+          TELEGRAM_BOT_TOKEN: dummy
+
+      - name: Upload standalone jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: clj-telebot-standalone
+          path: target/uberjar/*-standalone.jar
+          retention-days: 90
+
+      - name: Publish GitHub Release with jar
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Master build #${{ github.run_number }}
+          generate_release_notes: true
+          files: target/uberjar/*-standalone.jar
