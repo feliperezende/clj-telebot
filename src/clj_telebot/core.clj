@@ -2,7 +2,8 @@
   (:gen-class)
   (:require
    [clj-telebot.telegram.api :as api]
-   [clj-telebot.services.video-downloader :as video])
+   [clj-telebot.services.video-downloader :as video]
+   [clj-telebot.services.rate-limiter :as rate-limiter])
   (:import
    [java.lang.management ManagementFactory]
    [java.util.concurrent ExecutorService RejectedExecutionException
@@ -112,29 +113,34 @@
 
 (defn- process-update
   "Routes incoming updates to appropriate handlers based on command/text content.
-
-   Download commands run asynchronously so the bot can handle multiple
-   concurrent downloads without blocking."
+   Checks rate limit before processing any request.
+   Exceptions are caught locally so safe-poll always advances the offset
+   and Telegram does not re-deliver the same update (burning rate-limit tokens)."
   [update]
-  (when-let [{:keys [chat-id text]} (extract-text-message update)]
-    (let [^String txt text]
-      (cond
-        ;; Check for /download command
-        (or (.startsWith txt "/download")
-            (.startsWith txt "/dl"))
-        (handle-download-command chat-id txt)
+  (try
+    (when-let [{:keys [chat-id text]} (extract-text-message update)]
+      (if-let [rate-msg (rate-limiter/check-limit chat-id)]
+        (api/send-message chat-id rate-msg)
+        (let [^String txt text]
+          (cond
+            ;; Check for /download command
+            (or (.startsWith txt "/download")
+                (.startsWith txt "/dl"))
+            (handle-download-command chat-id txt)
 
-        ;; Check if message contains a video URL from supported platforms
-        (contains-video-url? txt)
-        (handle-download-command chat-id txt)
+            ;; Check if message contains a video URL from supported platforms
+            (contains-video-url? txt)
+            (handle-download-command chat-id txt)
 
-        ;; Check for /uptime command
-        (.startsWith txt "/uptime")
-        (handle-uptime-command chat-id)
+            ;; Check for /uptime command
+            (.startsWith txt "/uptime")
+            (handle-uptime-command chat-id)
 
-        ;; Otherwise echo the message
-        :else
-        (echo-update chat-id txt)))))
+            ;; Otherwise echo the message
+            :else
+            (echo-update chat-id txt)))))
+    (catch Exception e
+      (println "Error processing update:" (.getMessage e)))))
 
 (defn -main
   "Starts Telegram bot with async video download support.
