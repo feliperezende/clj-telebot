@@ -22,7 +22,18 @@
     (if (str/blank? v) 5 (Double/parseDouble v))))
 
 ;; Atom holding map of chat-id -> {:tokens N :last-refill ts}.
+;; Idle buckets are evicted when the map exceeds STALE_THRESHOLD entries.
 (defonce ^:private buckets (atom {}))
+
+(def ^:private stale-threshold
+  "Max bucket count before idle eviction kicks in."
+  (let [v (System/getenv "RATE_LIMIT_STALE_THRESHOLD")]
+    (if (str/blank? v) 1000 (Long/parseLong v))))
+
+(def ^:private stale-ttl-ms
+  "Idle bucket TTL in milliseconds."
+  (let [v (System/getenv "RATE_LIMIT_STALE_TTL_MINUTES")]
+    (if (str/blank? v) 60 (* (Long/parseLong v) 60000))))
 
 (defn- format-rate-limit-message
   "Formats a human-readable rate limit message with retry time."
@@ -46,9 +57,16 @@
    (check-limit chat-id (System/currentTimeMillis)))
   ([chat-id now-ms]
    (let [retry-after (atom nil)]
-     (swap! buckets
-       (fn [buckets]
-         (let [bucket (get buckets chat-id
+(swap! buckets
+        (fn [buckets]
+          (let [;; Evict stale entries when map is large
+                buckets (if (> (count buckets) stale-threshold)
+                          (into {} (filter (fn [[_ v]]
+                                             (> (+ (:last-refill v) stale-ttl-ms)
+                                                (double now-ms)))
+                                          buckets))
+                          buckets)
+                bucket (get buckets chat-id
                            {:tokens (double capacity)
                             :last-refill (double now-ms)})
                elapsed (max 0 (- (double now-ms) (:last-refill bucket)))
