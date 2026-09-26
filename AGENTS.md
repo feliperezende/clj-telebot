@@ -51,6 +51,7 @@ core.clj:process-update
 - Private functions use `defn-`.
 - Tests access private vars via `#'namespace/var-name` reader syntax.
 - Result-map convention in downloader: returns `{:success true, :file <java.io.File>}` or `{:success false, :error <string>}`.
+- **Every PR must bump the version in `project.clj`.** The CI pipeline builds a release from master and uses the project version for the jar filename and release notes. Bump the minor version for feature additions, patch for bug fixes. Remove the `-SNAPSHOT` suffix on release (e.g., `0.2.0` → `0.3.0`).
 
 ## Testing
 
