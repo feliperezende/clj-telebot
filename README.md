@@ -1,38 +1,65 @@
 # clj-telebot
 
-Small Clojure Telegram bot client using the Telegram HTTP API.
+Clojure Telegram bot that long-polls the Bot API (Hato + Cheshire). It echoes text, reports uptime, and downloads videos via yt-dlp with per-chat rate limiting.
 
 ## Requirements
 
-- Java 8+
-- Leiningen
-- A Telegram bot token from BotFather
+- Java 8+ (CI uses Temurin 21)
+- [Leiningen](https://leiningen.org/)
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) on `PATH` (video downloads)
+- [`ffmpeg`](https://ffmpeg.org/) on `PATH` (yt-dlp merges separate audio/video streams)
 
 ## Configuration
 
-Set the required environment variable before running:
+Required:
 
 ```bash
 export TELEGRAM_BOT_TOKEN="your_bot_token"
 ```
 
-If `TELEGRAM_BOT_TOKEN` is missing or blank, the app throws:
+If `TELEGRAM_BOT_TOKEN` is missing or blank, the first Telegram API call throws:
 
 ```text
 Missing required env var: TELEGRAM_BOT_TOKEN
 ```
 
-## Run
+Optional rate-limit env vars (per-chat token bucket):
 
-Start the app:
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `RATE_LIMIT_CAPACITY` | `10` | Max burst tokens per chat |
+| `RATE_LIMIT_REFILL_RATE` | `5` | Tokens refilled per minute |
+| `RATE_LIMIT_STALE_THRESHOLD` | `1000` | Evict idle buckets when map exceeds this size |
+| `RATE_LIMIT_STALE_TTL_MINUTES` | `60` | Idle bucket TTL before eviction |
+
+## Run
 
 ```bash
 lein run
 ```
 
-The current `-main` starts a long-polling loop and echoes text messages back to each chat.
+Or build and run the standalone uberjar:
 
-## REPL Usage
+```bash
+lein uberjar
+java -jar target/uberjar/clj-telebot-*-standalone.jar
+```
+
+## Commands
+
+| Input | Behavior |
+|-------|----------|
+| `/download <url>` or `/dl <url>` | Queue a yt-dlp download (max 3 concurrent) |
+| Plain message with a supported video URL | Same as download |
+| `/uptime` | Report JVM process uptime |
+| Other text | Echo the message back |
+
+Supported hosts for auto-detect / download: `x.com`, `twitter.com`, `tiktok.com`, `instagram.com`, `youtube.com` / `youtu.be`, `reddit.com`, `facebook.com`, `vimeo.com`, `dailymotion.com` (yt-dlp itself supports many more once a URL is accepted).
+
+Downloads land under `/tmp/clj-telebot/downloads`, then are sent to the chat and cleaned up. When the download pool is full, the bot replies that the server is busy.
+
+## REPL usage
 
 ```clojure
 (require '[clj-telebot.telegram.api :as api])
@@ -48,13 +75,22 @@ The current `-main` starts a long-polling loop and echoes text messages back to 
 (api/long-poll-updates prn {:offset 0 :timeout 30 :error-sleep-ms 1000})
 ```
 
-HTTP responses are requested with Hato using `{:as :json}`, so `:body` is already a Clojure map.
+HTTP responses use Hato `{:as :json}`, so `:body` is already a Clojure map.
 
-## Project Structure
+## Project structure
 
-- `src/clj_telebot/core.clj` entrypoint
-- `src/clj_telebot/telegram/api.clj` Telegram API helpers
-- `src/clj_telebot/misc/helpers.clj` environment variable utilities
+- `src/clj_telebot/core.clj` — entrypoint, command routing, download pool
+- `src/clj_telebot/telegram/api.clj` — Telegram HTTP client and long-poll loop
+- `src/clj_telebot/services/video_downloader.clj` — yt-dlp wrapper and temp files
+- `src/clj_telebot/services/rate_limiter.clj` — per-chat token bucket
+- `src/clj_telebot/misc/helpers.clj` — env-var helper
+
+## CI
+
+GitHub Actions (`.github/workflows/build.yml`):
+
+- **pull_request** to `master`: run `lein test`
+- **push** to `master`: test, build uberjar, upload artifact, publish a GitHub Release (`build-<run_number>`)
 
 ## License
 
